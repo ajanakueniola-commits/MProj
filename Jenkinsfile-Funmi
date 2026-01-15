@@ -28,7 +28,7 @@ pipeline {
         dir('packer') {
           sh '''
             packer init .
-            packer build nginx-app-base.pkr.hcl
+            packer build web-app-base.pkr.hcl
           '''
         }
       }
