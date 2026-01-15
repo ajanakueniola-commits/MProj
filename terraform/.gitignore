@@ -265,3 +265,9 @@ packer/*.log
 *.backup    
 *.log
 # End of terraform/.gitignore
+.json
+.terraform.lock.hcl
+# Ignore local override files.
+*override.tfvars
+*override.tfvars.json
+.json.lock
