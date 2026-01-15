@@ -2,11 +2,16 @@ pipeline {
   agent any
 
   environment {
-    AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-    AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
-    AWS_REGION           = 'us-east-2'
-    AWS_SSH_KEY = credentials('AWS_SSH_KEY')
-  }
+  AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
+  AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+  AWS_REGION           = 'us-east-2'
+  AWS_SSH_KEY          = credentials('AWS_SSH_KEY')
+
+  TF_VAR_db_username   = credentials('db_username')
+  TF_VAR_db_password   = credentials('db_password')
+  TF_VAR_db_name       = credentials('db_name')
+  TF_VAR_key_name      = credentials('key_name')
+}
 
   parameters {
     choice(name: 'ACTION', choices: ['plan', 'apply', 'destroy'], description: 'Terraform action')
@@ -34,41 +39,29 @@ pipeline {
     }
 
   stage('Terraform') {
-  environment {
-    TF_VAR_db_username = credentials('db_username')
-    TF_VAR_db_password = credentials('db_password')
-    TF_VAR_db_name     = credentials('db_name')
-    TF_VAR_key_name    = credentials('key_name')
-
-  }
-
   steps {
     dir('terraform') {
-      sh 'terraform init -reconfigure'
-      sh 'terraform validate'
-      sh 'env | grep TF_VAR'
-      sh 'env | grep TF_VAR'
-
+      sh 'terraform init'
 
       script {
         if (params.ACTION == 'plan') {
-          sh 'terraform plan'
+          sh 'terraform plan -input=false'
         }
 
         if (params.ACTION == 'apply') {
-          sh 'terraform apply -auto-approve'
+          sh 'terraform apply -auto-approve -input=false'
         }
 
         if (params.ACTION == 'destroy') {
-          sh 'terraform destroy -auto-approve'
+          input message: 'Are you sure you want to destroy?', ok: 'Destroy'
+          sh 'terraform destroy -auto-approve -input=false'
         }
       }
     }
   }
 }
 
-
-    stage('Get IPs') {
+ stage('Get IPs') {
       when { expression { params.ACTION == 'apply' } }
       steps {
         script {
@@ -143,18 +136,25 @@ EOF
       }
     }
     }
-    stage('Terraform Destroy') {
+  stage('Terraform Destroy') {
   when { expression { params.ACTION == 'destroy' } }
   steps {
     dir('terraform') {
       input message: 'Are you sure you want to destroy?', ok: 'Destroy'
-      sh 'terraform destroy -auto-approve'
+
+      sh '''
+      terraform destroy -auto-approve -input=false \
+        -var="db_username=$DB_USERNAME" \
+        -var="db_password=$DB_PASSWORD" \
+        -var="db_name=$DB_NAME" \
+        -var="key_name=$KEY_NAME"
+      '''
     }
   }
 }
+  
 
-  post {
-    success { echo 'Deployment successful 🚀' }
-    failure { echo 'Pipeline failed ❌' }
-  }
-}
+
+
+
+
