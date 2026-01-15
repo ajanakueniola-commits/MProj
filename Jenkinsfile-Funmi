@@ -86,6 +86,9 @@ pipeline {
     stage('Deploy Nginx + Reverse Proxy') {
     when { expression { params.ACTION == 'apply' } }
       steps {
+        script {
+          deployNginxAndProxy(env.WEB_IPS, env.BACKEND_IP)
+        }
         sshagent(credentials: ['AWS_SSH_KEY']) {
           sh """
           for ip in \$(echo "$WEB_IPS" | jq -r '.[]'); do
