@@ -84,51 +84,49 @@ pipeline {
     }
 
     stage('Deploy Nginx + Reverse Proxy') {
-      when { expression { params.ACTION == 'apply' } }
+    when { expression { params.ACTION == 'apply' } }
       steps {
         sshagent(credentials: ['AWS_SSH_KEY']) {
           sh """
-          for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
-            echo "Configuring Nginx on \$ip"
+          for ip in \$(echo "$WEB_IPS" | jq -r '.[]'); do
+          echo "Configuring Nginx on \$ip"
 
-            ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
-              rm -rf /tmp/fruits
-              git clone https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits
-              cd /tmp/fruits/frontend
+          ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << EOF
+          rm -rf /tmp/fruits
+          git clone https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits
+          cd /tmp/fruits/frontend
 
-              sed -i 's|http://localhost|http://${env.BACKEND_IP}:8000|g' index.html
-              sudo cp index.html /usr/share/nginx/html/
+          sed -i "s|http://localhost|http://${BACKEND_IP}|g" index.html
+          sudo cp index.html /usr/share/nginx/html/index.html
 
-              sudo tee /etc/nginx/nginx.conf > /dev/null << EOL
-server {
-    listen 80;
-    server_name enny4life.duckdns.org;
+          sudo tee /etc/nginx/conf.d/app.conf > /dev/null << EOL
+      server {
+        listen 80;
+          server_name enny4life.duckdns.org;
 
-    root /usr/share/nginx/html;
-    index index.html;
-
-    location / {
-        try_files \\$uri \\$uri/ /index.html;
+      location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
     location /api/ {
-        proxy_pass http://${env.BACKEND_IP}:8000/;
-        proxy_set_header Host \\$host;
-        proxy_set_header X-Real-IP \\$remote_addr;
+        proxy_pass http://${BACKEND_IP}:8000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 }
 EOL
 
-              sudo nginx -t
-              sudo systemctl restart nginx
+          sudo nginx -t
+          sudo systemctl restart nginx
 EOF
-          done
-          """
-        }
-      }
+      done
+      """
     }
-
   }
+}
+
 
   post {
     success {
