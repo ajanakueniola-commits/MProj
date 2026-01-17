@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        booleanParam(name: 'BUILD_AMIS', defaultValue: false, description: 'Build AMI?')
+        booleanParam(name: 'BUILD_AMIS', defaultValue: false, description: 'Build Packer AMI?')
         choice(name: 'ACTION', choices: ['plan', 'apply', 'destroy'], description: 'Terraform Action')
     }
 
@@ -16,19 +16,34 @@ pipeline {
         TF_VAR_db_password     = credentials('db_password')
         TF_VAR_db_name         = credentials('db_name')
         TF_VAR_key_name        = credentials('key_name')
+        
+        S3_BUCKET              = 'funmi-cicd-state-bucket'
+        BRANCH                 = 'mini-project'
+        SERVER_NAME            = 'enny4life.duckdns.org'
     }
 
     stages {
 
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                checkout([$class: 'GitSCM', branches: [[name: 'refs/heads/mini-project']],
-                          userRemoteConfigs: [[url: 'https://github.com/ajanakueniola-commits/MProj.git']]])
+                sh """
+                    rm -rf /opt/backend /opt/web
+
+                    # Clone backend
+                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
+                    cd /opt/backend/backend
+
+                    # Clone frontend
+                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
+                    cd /opt/web/frontend
+                """
             }
         }
 
         stage('Build Base AMI') {
-            when { expression { params.BUILD_AMIS } }
+            when {
+                expression { params.BUILD_AMIS }
+            }
             steps {
                 dir('packer') {
                     sh '''
@@ -42,48 +57,25 @@ pipeline {
         stage('Terraform') {
             steps {
                 dir('terraform') {
-                    // Configure Terraform backend with S3
-                    sh """
-                        cat > backend.tf <<EOL
-                        terraform {
-                          backend "s3" {
-                            bucket = "funmi-cicd-state-bucket"
-                            key    = "terraform/state.tfstate"
-                            region = "${AWS_REGION}"
-                          }
-                        }
-                        EOL
-                    """
-
-                    sh 'terraform init'
+                    sh "terraform init -backend-config=\"bucket=$S3_BUCKET\""
 
                     script {
                         if (params.ACTION == 'plan') {
                             sh 'terraform plan -input=false'
-                        }
-                        if (params.ACTION == 'apply') {
+                        } else if (params.ACTION == 'apply') {
                             sh 'terraform apply -auto-approve -input=false'
-                        }
-                        if (params.ACTION == 'destroy') {
+                        } else if (params.ACTION == 'destroy') {
                             input message: 'Are you sure you want to destroy?', ok: 'Destroy'
                             sh 'terraform destroy -auto-approve -input=false'
                         }
                     }
-                }
-            }
-        }
 
-        stage('Fetch Terraform Outputs') {
-            steps {
-                dir('terraform') {
+                    // Fetch Terraform outputs
                     script {
-                        // Fetch backend private IPs
-                        env.BACKEND_IPS = sh(script: "terraform output -json backend_private_ips | jq -r '.[]'", returnStdout: true).trim()
-                        echo "Backend IPs: ${env.BACKEND_IPS}"
-
-                        // Fetch web server IPs
-                        env.WEB_IPS = sh(script: "terraform output -json web_server_ips | jq -r '.[]'", returnStdout: true).trim()
-                        echo "Web Server IPs: ${env.WEB_IPS}"
+                        env.BACKEND_IP = sh(script: 'terraform output -raw backend_private_ip', returnStdout: true).trim()
+                        env.WEB_IP     = sh(script: 'terraform output -raw web_server_ip', returnStdout: true).trim()
+                        echo "Backend IP: ${env.BACKEND_IP}"
+                        echo "Web Server IP: ${env.WEB_IP}"
                     }
                 }
             }
@@ -91,67 +83,64 @@ pipeline {
 
         stage('Deploy Backend App') {
             steps {
-                script {
-                    sh """
-                        rm -rf /opt/backend
-                        git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
-                        cd /opt/backend/backend
+                sh """
+                    # Create backend.service
+                    sudo bash -c 'cat > /etc/systemd/system/backend.service <<EOF
+[Unit]
+Description=Backend Service
+After=network.target
 
-                        for ip in ${env.BACKEND_IPS}; do
-                            echo "Deploying backend to \$ip"
+[Service]
+User=ec2-user
+WorkingDirectory=/opt/backend/backend
+ExecStart=/usr/bin/python3 app.py
+Restart=always
 
-                            # Copy app files
-                            scp -i \$AWS_SSH_KEY -r ./* ec2-user@\$ip:/home/ec2-user/backend/
+[Install]
+WantedBy=multi-user.target
+EOF'
 
-                            # Restart backend service
-                            ssh -i \$AWS_SSH_KEY ec2-user@\$ip 'sudo systemctl restart backend.service'
-                        done
-                    """
-                }
+                    sudo systemctl daemon-reload
+                    sudo systemctl enable backend
+                    sudo systemctl restart backend
+                """
             }
         }
 
         stage('Deploy Web + Nginx') {
             steps {
-                script {
-                    sh """
-                        rm -rf /opt/web
-                        git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
-                        cd /opt/web/frontend
+                sh """
+                    # Install Nginx
+                    sudo yum install -y nginx
 
-                        for ip in ${env.WEB_IPS}; do
-                            echo "Deploying web app + nginx to \$ip"
+                    # Configure reverse proxy
+                    sudo bash -c "cat > /etc/nginx/nginx.conf <<EOF
+server {
+    listen 80;
+    server_name $SERVER_NAME;
 
-                            # Copy web files
-                            scp -i \$AWS_SSH_KEY -r ./* ec2-user@\$ip:/var/www/html/
+    location / {
+        proxy_pass http://$BACKEND_IP:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOF"
 
-                            # Copy Nginx config with reverse proxy to web server
-                            echo "server {
-                                listen 80;
-                                server_name enny4life.duckdns.org;
-
-                                location / {
-                                    proxy_pass http://\$ip;
-                                    proxy_set_header Host \$host;
-                                    proxy_set_header X-Real-IP \$remote_addr;
-                                }
-                            }" | ssh -i \$AWS_SSH_KEY ec2-user@\$ip 'sudo tee /etc/nginx/conf.d/reverse-proxy.conf'
-
-                            # Restart nginx
-                            ssh -i \$AWS_SSH_KEY ec2-user@\$ip 'sudo systemctl restart nginx'
-                        done
-                    """
-                }
+                    sudo systemctl enable nginx
+                    sudo systemctl restart nginx
+                """
             }
         }
     }
 
     post {
         success {
-            echo "Web & App deployment succeeded ✅"
+            echo "✅ Full deployment completed successfully!"
         }
         failure {
-            echo "Web & App deployment failed ❌"
+            echo "❌ Deployment failed!"
         }
     }
 }
