@@ -24,18 +24,20 @@ pipeline {
 
     stages {
 
-        stage('Checkout') {
+        stage('Checkout Backend') {
             steps {
                 sh """
-                    rm -rf /opt/backend /opt/web
-
-                    # Clone backend
+                    rm -rf /opt/backend
                     git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
-                    cd /opt/backend/backend
+                """
+            }
+        }
 
-                    # Clone frontend
+        stage('Checkout Frontend') {
+            steps {
+                sh """
+                    rm -rf /opt/web
                     git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
-                    cd /opt/web/frontend
                 """
             }
         }
@@ -69,11 +71,18 @@ pipeline {
                             sh 'terraform destroy -auto-approve -input=false'
                         }
                     }
+                }
+            }
+        }
 
-                    // Fetch Terraform outputs
+        stage('Fetch Terraform Outputs') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                dir('terraform') {
                     script {
-                        env.BACKEND_IP = sh(script: 'terraform output -raw backend_private_ip', returnStdout: true).trim()
-                        env.WEB_IP     = sh(script: 'terraform output -raw web_server_ip', returnStdout: true).trim()
+                        // Only fetch if outputs exist
+                        env.BACKEND_IP = sh(script: 'terraform output -raw backend_private_ip || echo ""', returnStdout: true).trim()
+                        env.WEB_IP     = sh(script: 'terraform output -raw web_server_ip || echo ""', returnStdout: true).trim()
                         echo "Backend IP: ${env.BACKEND_IP}"
                         echo "Web Server IP: ${env.WEB_IP}"
                     }
@@ -82,9 +91,9 @@ pipeline {
         }
 
         stage('Deploy Backend App') {
+            when { expression { env.BACKEND_IP != "" } }
             steps {
                 sh """
-                    # Create backend.service
                     sudo bash -c 'cat > /etc/systemd/system/backend.service <<EOF
 [Unit]
 Description=Backend Service
@@ -108,12 +117,11 @@ EOF'
         }
 
         stage('Deploy Web + Nginx') {
+            when { expression { env.BACKEND_IP != "" } }
             steps {
                 sh """
-                    # Install Nginx
                     sudo yum install -y nginx
 
-                    # Configure reverse proxy
                     sudo bash -c "cat > /etc/nginx/nginx.conf <<EOF
 server {
     listen 80;
