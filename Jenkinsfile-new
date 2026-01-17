@@ -206,6 +206,24 @@ pipeline {
 
     stages {
 
+        stage('Checkout Backend') {
+            steps {
+                sh """
+                    rm -rf /opt/backend
+                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
+                """
+            }
+        }
+
+        stage('Checkout Frontend') {
+            steps {
+                sh """
+                    rm -rf /opt/web
+                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
+                """
+            }
+        }
+
         stage('Build Base AMI') {
             when { expression { params.BUILD_AMIS } }
             steps {
@@ -218,7 +236,7 @@ pipeline {
             }
         }
 
-        stage('Terraform') {
+        stage('Terraform Init & Apply') {
             steps {
                 dir('terraform') {
                     sh "terraform init -reconfigure -backend-config=\"bucket=$S3_BUCKET\""
@@ -249,24 +267,6 @@ pipeline {
                         echo "Web Server IP: ${env.WEB_IP}"
                     }
                 }
-            }
-        }
-
-        stage('Checkout Backend') {
-            steps {
-                sh """
-                    rm -rf /opt/backend
-                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
-                """
-            }
-        }
-
-        stage('Checkout Frontend') {
-            steps {
-                sh """
-                    rm -rf /opt/web
-                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
-                """
             }
         }
 
