@@ -257,13 +257,15 @@ pipeline {
               echo "Configuring Nginx on \$ip"
 
               ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
-                rm -rf /tmp/fruits
-                git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits
+                rm -rf /tmp/fruits-veg_market
+
+                git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits-veg_market
                 cd /tmp/fruits-veg_market/frontend
-                sudo cat /tmp/fruits-veg_market/frontend/index.html
+
+                sudo cat index.html
 
                 sed -i 's|http://localhost|https://${env.BACKEND_IP}|g' index.html
-                sudo cat /tmp/fruits-veg_market/frontend/index.html
+                
                 sudo cp index.html /usr/share/nginx/html/
                 sudo cat /usr/share/nginx/html/index.html
 
