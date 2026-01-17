@@ -33,29 +33,18 @@ output "vpc_cidr_used" {
 output "private_subnet_cidrs_used" {
   value = var.private_subnet_cidrs
 }
-output "backend_private_ips" {
-  description = "Private IPs of backend app servers (empty if in private subnet)"
-  value       = aws_instance.app[*].private_ip
-}
 
 output "public_subnet_ids" {
   description = "List of public subnet IDs"
   value       = aws_subnet.public[*].id
 }
 
-output "web_server_ips" {
-  description = "Public IPs of Nginx web servers"
-  value       = aws_instance.nginx[*].public_ip
-}
-
 output "backend_private_ips" {
-  value       = aws_instance.backend[*].private_ip
-  description = "Private IPs of backend servers"
+  value = aws_instance.backend[*].private_ip
 }
 
 output "web_server_ips" {
-  value       = aws_instance.web[*].public_ip
-  description = "Public IPs of web servers"
+  value = aws_instance.web[*].public_ip
 }
 
 ##########################
