@@ -396,7 +396,7 @@ stage('Deploy FastAPI Backend') {
         node { // <-- Add this
             sshagent(credentials: ['AWS_SSH_KEY']) {
                 sh """
-                for ip in \$(echo '${env.BACKEND_IP}' | jq -r '.[]'); do
+                for ip in ${env.BACKEND_IP}; do
                     echo "Deploying FastAPI on \$ip"
 
                     ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << EOF
