@@ -59,14 +59,19 @@ pipeline {
         stage('Terraform') {
             steps {
                 dir('terraform') {
-                    sh "terraform init -backend-config=\"bucket=$S3_BUCKET\""
+                    sh 'terraform init -reconfigure'
+                    sh 'terraform validate'
 
                     script {
                         if (params.ACTION == 'plan') {
                             sh 'terraform plan -input=false'
-                        } else if (params.ACTION == 'apply') {
+                        }
+
+                        if (params.ACTION == 'apply') {
                             sh 'terraform apply -auto-approve -input=false'
-                        } else if (params.ACTION == 'destroy') {
+                        }
+
+                        if (params.ACTION == 'destroy') {
                             input message: 'Are you sure you want to destroy?', ok: 'Destroy'
                             sh 'terraform destroy -auto-approve -input=false'
                         }
@@ -74,6 +79,30 @@ pipeline {
                 }
             }
         }
+
+        stage('Output Terraform Info') {
+            when { expression { params.ACTION == 'apply' } }
+            steps {
+                script {
+                    dir('terraform') {
+                        def backendIp = sh(
+                            script: "terraform output -json backend_private_ips | jq -r '.[0]'",
+                            returnStdout: true
+                        ).trim()
+
+                        def webIps = sh(
+                            script: "terraform output -json web_server_ips",
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Backend IP: ${backendIp}"
+                        echo "Web Server IPs: ${webIps}"
+                    }
+                }
+            }
+        }
+
+    }
 
         stage('Fetch Terraform Outputs') {
             when { expression { params.ACTION == 'apply' } }
