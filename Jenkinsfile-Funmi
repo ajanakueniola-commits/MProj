@@ -259,10 +259,13 @@ pipeline {
               ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
                 rm -rf /tmp/fruits
                 git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits
-                cd /tmp/fruits/frontend
+                cd /tmp/fruits-veg_market/frontend
+                sudo cat /tmp/fruits-veg_market/frontend/index.html
 
                 sed -i 's|http://localhost|https://${env.BACKEND_IP}|g' index.html
+                sudo cat /tmp/fruits-veg_market/frontend/index.html
                 sudo cp index.html /usr/share/nginx/html/
+                sudo cat /usr/share/nginx/html/index.html
 
                 sudo tee /etc/nginx/nginx.conf > /dev/null << EOL
 server {
