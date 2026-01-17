@@ -204,25 +204,25 @@ pipeline {
         SERVER_NAME            = 'enny4life.duckdns.org'
     }
 
-    stages {
+    // stages {
 
-        stage('Checkout Backend') {
-            steps {
-                sh """
-                    rm -rf /opt/backend
-                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
-                """
-            }
-        }
+    //     stage('Checkout Backend') {
+    //         steps {
+    //             sh """
+    //                 rm -rf /opt/backend
+    //                 git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
+    //             """
+    //         }
+    //     }
 
-        stage('Checkout Frontend') {
-            steps {
-                sh """
-                    rm -rf /opt/web
-                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
-                """
-            }
-        }
+    //     stage('Checkout Frontend') {
+    //         steps {
+    //             sh """
+    //                 rm -rf /opt/web
+    //                 git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
+    //             """
+    //         }
+    //     }
 
         stage('Build Base AMI') {
             when { expression { params.BUILD_AMIS } }
