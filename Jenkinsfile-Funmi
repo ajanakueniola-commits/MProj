@@ -324,23 +324,21 @@ stage('Deploy Nginx + Reverse Proxy') {
         for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
           echo "Configuring Nginx on \$ip"
 
-          ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << EOF
+          ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
             set -e
 
             sudo yum install -y nginx git
-
             sudo systemctl enable nginx
 
             rm -rf /tmp/fruits-veg_market
             git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits-veg_market
-
             cd /tmp/fruits-veg_market/frontend
 
-            sed -i 's|http://localhost|http://${env.BACKEND_IP}|g' index.html
+            sed -i 's|http://localhost|http://${BACKEND_IP}|g' index.html
             sudo cp index.html /usr/share/nginx/html/index.html
 
-            # -------- BASE NGINX CONFIG (NO server block)
-            sudo tee /etc/nginx/nginx.conf > /dev/null << 'EOL'
+            # ---- Base nginx.conf ----
+            sudo tee /etc/nginx/nginx.conf > /dev/null << 'NGINXCONF'
 user nginx;
 worker_processes auto;
 error_log /var/log/nginx/error.log;
@@ -357,10 +355,10 @@ http {
     keepalive_timeout 65;
     include /etc/nginx/conf.d/*.conf;
 }
-EOL
+NGINXCONF
 
-            # -------- APP SERVER CONFIG
-            sudo tee /etc/nginx/conf.d/app.conf > /dev/null << EOL
+            # ---- App server config ----
+            sudo tee /etc/nginx/conf.d/app.conf > /dev/null << 'APPCONF'
 server {
     listen 80 default_server;
     server_name enny4life.duckdns.org;
@@ -373,16 +371,16 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://${env.BACKEND_IP}:8000/;
+        proxy_pass http://${BACKEND_IP}:8000/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
     }
 }
-EOL
+APPCONF
 
             sudo nginx -t
             sudo systemctl restart nginx
-          EOF
+EOF
         done
         """
       }
