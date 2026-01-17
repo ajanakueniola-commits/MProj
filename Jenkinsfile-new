@@ -183,75 +183,77 @@
 pipeline {
     agent any
 
-    parameters {
-        booleanParam(name: 'BUILD_AMIS', defaultValue: false, description: 'Build Packer AMI?')
-        choice(name: 'ACTION', choices: ['plan', 'apply', 'destroy'], description: 'Terraform Action')
-    }
-
     environment {
-        AWS_ACCESS_KEY_ID      = credentials('aws-access-key-id')
-        AWS_SECRET_ACCESS_KEY  = credentials('aws-secret-access-key')
-        AWS_REGION             = 'us-east-2'
-        AWS_SSH_KEY            = credentials('AWS_SSH_KEY')
-
-        TF_VAR_db_username     = credentials('db_username')
-        TF_VAR_db_password     = credentials('db_password')
-        TF_VAR_db_name         = credentials('db_name')
-        TF_VAR_key_name        = credentials('key_name')
-        
-        S3_BUCKET              = 'funmi-cicd-state-bucket'
-        BRANCH                 = 'mini-project'
-        SERVER_NAME            = 'enny4life.duckdns.org'
+        AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_REGION            = 'us-east-2'
     }
 
-    // stages {
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: ['plan', 'apply', 'destroy'],
+            description: 'Terraform action'
+        )
+    }
 
-    //     stage('Checkout Backend') {
-    //         steps {
-    //             sh """
-    //                 rm -rf /opt/backend
-    //                 git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
-    //             """
-    //         }
-    //     }
+    stages {
 
-    //     stage('Checkout Frontend') {
-    //         steps {
-    //             sh """
-    //                 rm -rf /opt/web
-    //                 git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
-    //             """
-    //         }
-    //     }
-
-        stage('Build Base AMI') {
-            when { expression { params.BUILD_AMIS } }
+        stage('Checkout Infra Repo') {
             steps {
-                dir('packer') {
-                    sh '''
-                        packer init .
-                        packer build web-app-base.pkr.hcl
-                    '''
+                checkout scm
+            }
+        }
+
+        stage('Checkout App Repo (mini-project)') {
+            steps {
+                sh '''
+                    rm -rf fruits-veg_market
+                    git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git
+                '''
+            }
+        }
+
+        stage('Terraform Init & Validate') {
+            steps {
+                dir('terraform') {
+                    sh 'rm -rf .terraform .terraform.lock.hcl'
+                    sh 'terraform init -reconfigure'
+                    sh 'terraform validate'
                 }
             }
         }
 
-        stage('Terraform Init & Apply') {
+        stage('Terraform Plan') {
+            when { expression { params.ACTION == 'plan' } }
             steps {
                 dir('terraform') {
-                    sh "terraform init -reconfigure -backend-config=\"bucket=$S3_BUCKET\""
-                    sh 'terraform validate'
+                    sh 'terraform plan'
+                }
+            }
+        }
 
-                    script {
-                        if (params.ACTION == 'plan') {
-                            sh 'terraform plan -input=false'
-                        } else if (params.ACTION == 'apply') {
-                            sh 'terraform apply -auto-approve -input=false'
-                        } else if (params.ACTION == 'destroy') {
-                            input message: 'Are you sure you want to destroy?', ok: 'Destroy'
-                            sh 'terraform destroy -auto-approve -input=false'
-                        }
-                    }
+        stage('Terraform Apply') {
+            when { expression { params.ACTION == 'apply' } }
+            environment {
+                TF_VAR_db_username = credentials('db_username')
+                TF_VAR_db_password = credentials('db_password')
+                TF_VAR_db_name     = credentials('db_name')
+                TF_VAR_key_name    = credentials('key_name')
+            }
+            steps {
+                dir('terraform') {
+                    sh 'terraform apply -auto-approve'
+                }
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when { expression { params.ACTION == 'destroy' } }
+            steps {
+                dir('terraform') {
+                    input message: 'Are you sure you want to destroy?', ok: 'Destroy'
+                    sh 'terraform destroy -auto-approve'
                 }
             }
         }
@@ -261,75 +263,64 @@ pipeline {
             steps {
                 dir('terraform') {
                     script {
-                        env.BACKEND_IP = sh(script: 'terraform output -raw backend_private_ip || echo ""', returnStdout: true).trim()
-                        env.WEB_IP     = sh(script: 'terraform output -raw web_server_ip || echo ""', returnStdout: true).trim()
-                        echo "Backend IP: ${env.BACKEND_IP}"
-                        echo "Web Server IP: ${env.WEB_IP}"
+                        env.BACKEND_IP = sh(
+                            script: "terraform output -json backend_private_ips | jq -r '.[0]'",
+                            returnStdout: true
+                        ).trim()
+
+                        env.WEB_IPS = sh(
+                            script: "terraform output -json web_server_ips",
+                            returnStdout: true
+                        ).trim()
                     }
+
+                    echo "Backend IP: ${env.BACKEND_IP}"
+                    echo "Web IPs: ${env.WEB_IPS}"
                 }
             }
         }
 
-        stage('Deploy Backend App') {
-            when { expression { env.BACKEND_IP != "" } }
+        stage('Deploy Nginx Reverse Proxy') {
+            when { expression { params.ACTION == 'apply' } }
             steps {
-                sh """
-                    sudo bash -c 'cat > /etc/systemd/system/backend.service <<EOF
-[Unit]
-Description=Backend Service
-After=network.target
+                sshagent(credentials: ['AWS_SSH_KEY']) {
+                    sh """
+                    for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
+                        echo "Configuring Nginx on \$ip"
 
-[Service]
-User=ec2-user
-WorkingDirectory=/opt/backend/backend
-ExecStart=/usr/bin/python3 app.py
-Restart=always
+                        ssh -o StrictHostKeyChecking=no ec2-user@\$ip << EOF
+                        sudo yum install -y nginx git
+                        sudo systemctl enable nginx
 
-[Install]
-WantedBy=multi-user.target
-EOF'
-
-                    sudo systemctl daemon-reload
-                    sudo systemctl enable backend
-                    sudo systemctl restart backend
-                """
-            }
-        }
-
-        stage('Deploy Web + Nginx') {
-            when { expression { env.BACKEND_IP != "" } }
-            steps {
-                sh """
-                    sudo yum install -y nginx
-
-                    sudo bash -c "cat > /etc/nginx/nginx.conf <<EOF
+                        sudo tee /etc/nginx/nginx.conf > /dev/null << EOL
 server {
     listen 80;
-    server_name $SERVER_NAME;
+    server_name enny4life.duckdns.org;
 
     location / {
-        proxy_pass http://$BACKEND_IP:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_pass http://${env.BACKEND_IP}:8000;
+        proxy_set_header Host \\$host;
+        proxy_set_header X-Real-IP \\$remote_addr;
     }
 }
-EOF"
+EOL
 
-                    sudo systemctl enable nginx
-                    sudo systemctl restart nginx
-                """
+                        sudo nginx -t
+                        sudo systemctl restart nginx
+EOF
+                    done
+                    """
+                }
             }
         }
-
-    } // end stages
+    }
 
     post {
         success {
-            echo "✅ Full deployment completed successfully!"
+            echo "✅ Pipeline completed successfully"
         }
         failure {
-            echo "❌ Deployment failed!"
+            echo "❌ Pipeline failed"
         }
     }
-
+}
