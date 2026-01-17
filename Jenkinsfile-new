@@ -24,24 +24,6 @@ pipeline {
 
     stages {
 
-        stage('Checkout Backend') {
-            steps {
-                sh """
-                    rm -rf /opt/backend
-                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
-                """
-            }
-        }
-
-        stage('Checkout Frontend') {
-            steps {
-                sh """
-                    rm -rf /opt/web
-                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
-                """
-            }
-        }
-
         stage('Build Base AMI') {
             when {
                 expression { params.BUILD_AMIS }
@@ -104,6 +86,7 @@ pipeline {
 
     }
 
+
         stage('Fetch Terraform Outputs') {
             when { expression { params.ACTION == 'apply' } }
             steps {
@@ -118,7 +101,23 @@ pipeline {
                 }
             }
         }
+        stage('Checkout Backend') {
+            steps {
+                sh """
+                    rm -rf /opt/backend
+                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/backend
+                """
+            }
+        }
 
+        stage('Checkout Frontend') {
+            steps {
+                sh """
+                    rm -rf /opt/web
+                    git clone -b $BRANCH https://github.com/ajanakueniola-commits/fruits-veg_market.git /opt/web
+                """
+            }
+        }
         stage('Deploy Backend App') {
             when { expression { env.BACKEND_IP != "" } }
             steps {
