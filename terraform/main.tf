@@ -6,18 +6,31 @@ terraform {
     encrypt = true
 
   }
-  required_version = ">= 1.6.0"
+#   required_version = ">= 1.6.0"
 
+#   required_providers {
+#     aws = {
+#       source  = "hashicorp/aws"
+#       version = "~> 5.0"
+#     }
+#   }
+# }
+
+# provider "aws" {
+#   region = "us-east-2"
+# }
+
+terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 5.30"   # stable, safe
     }
   }
 }
-
 provider "aws" {
-  region = "us-east-2"
+  region = var.region
+}
 }
 
 ####################
