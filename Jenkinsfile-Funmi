@@ -204,6 +204,7 @@ pipeline {
             }
             steps {
                 dir('terraform') {
+                    sh 'rm -rf .terraform .terraform.lock.hcl'
                     sh 'terraform init -reconfigure'
                     sh 'terraform validate'
 
