@@ -247,71 +247,146 @@ pipeline {
       }
     }
 
-    stage('Deploy Nginx + Reverse Proxy') {
-      when { expression { params.ACTION == 'apply' } }
-      steps {
-        script {
-          sshagent(credentials: ['AWS_SSH_KEY']) {
-            sh """
-            for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
-              echo "Configuring Nginx on \$ip"
+//     stage('Deploy Nginx + Reverse Proxy') {
+//       when { expression { params.ACTION == 'apply' } }
+//       steps {
+//         script {
+//           sshagent(credentials: ['AWS_SSH_KEY']) {
+//             sh """
+//             for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
+//               echo "Configuring Nginx on \$ip"
 
-              ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
-                rm -rf /tmp/fruits-veg_market
+//               ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
+//                 rm -rf /tmp/fruits-veg_market
 
-                git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits-veg_market
-                cd /tmp/fruits-veg_market/frontend
+//                 git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits-veg_market
+//                 cd /tmp/fruits-veg_market/frontend
 
-                sudo cat index.html
+//                 sudo cat index.html
 
-                sed -i 's|http://localhost|https://${env.BACKEND_IP}|g' index.html
+//                 sed -i 's|http://localhost|https://${env.BACKEND_IP}|g' index.html
                 
-                sudo cp index.html /usr/share/nginx/html/
-                sudo cat /usr/share/nginx/html/index.html
+//                 sudo cp index.html /usr/share/nginx/html/
+//                 sudo cat /usr/share/nginx/html/index.html
 
-                sudo tee /etc/nginx/nginx.conf > /dev/null << EOL
+//                 sudo tee /etc/nginx/nginx.conf > /dev/null << EOL
+// server {
+//     listen 80;
+//     server_name enny4life.duckdns.org;
+
+//     root /usr/share/nginx/html;
+//     index index.html;
+
+//     location / {
+//         try_files \\\$uri \\\$uri/ /index.html;
+//     }
+
+//     location /api/ {
+//         proxy_pass http://${env.BACKEND_IP}:8000/;
+//         proxy_set_header Host \\\$host;
+//         proxy_set_header X-Real-IP \\\$remote_addr;
+//     }
+// }
+// EOL
+
+//                 sudo nginx -t
+//                 sudo systemctl restart nginx
+// EOF
+//             done
+//             """
+//           }
+//         }
+//       }
+//     }
+
+//     stage('Terraform Destroy') {
+//       when { expression { params.ACTION == 'destroy' } }
+//       steps {
+//         dir('terraform') {
+//           input message: 'Are you sure you want to destroy?', ok: 'Destroy'
+//           sh 'terraform destroy -auto-approve'
+//         }
+//       }
+//     }
+//   }
+
+//   post {
+//     success { echo 'Deployment successful 🚀' }
+//     failure { echo 'Pipeline failed ❌' }
+//   }
+// }
+stage('Deploy Nginx + Reverse Proxy') {
+  when { expression { params.ACTION == 'apply' } }
+  steps {
+    script {
+      sshagent(credentials: ['AWS_SSH_KEY']) {
+        sh """
+        for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
+          echo "Configuring Nginx on \$ip"
+
+          ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << EOF
+            set -e
+
+            sudo yum install -y nginx git
+
+            sudo systemctl enable nginx
+
+            rm -rf /tmp/fruits-veg_market
+            git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits-veg_market
+
+            cd /tmp/fruits-veg_market/frontend
+
+            sed -i 's|http://localhost|http://${env.BACKEND_IP}|g' index.html
+            sudo cp index.html /usr/share/nginx/html/index.html
+
+            # -------- BASE NGINX CONFIG (NO server block)
+            sudo tee /etc/nginx/nginx.conf > /dev/null << 'EOL'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+    sendfile        on;
+    keepalive_timeout 65;
+    include /etc/nginx/conf.d/*.conf;
+}
+EOL
+
+            # -------- APP SERVER CONFIG
+            sudo tee /etc/nginx/conf.d/app.conf > /dev/null << EOL
 server {
-    listen 80;
+    listen 80 default_server;
     server_name enny4life.duckdns.org;
 
     root /usr/share/nginx/html;
     index index.html;
 
     location / {
-        try_files \\\$uri \\\$uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
     location /api/ {
         proxy_pass http://${env.BACKEND_IP}:8000/;
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 }
 EOL
 
-                sudo nginx -t
-                sudo systemctl restart nginx
-EOF
-            done
-            """
-          }
-        }
+            sudo nginx -t
+            sudo systemctl restart nginx
+          EOF
+        done
+        """
       }
     }
-
-    stage('Terraform Destroy') {
-      when { expression { params.ACTION == 'destroy' } }
-      steps {
-        dir('terraform') {
-          input message: 'Are you sure you want to destroy?', ok: 'Destroy'
-          sh 'terraform destroy -auto-approve'
-        }
-      }
-    }
-  }
-
-  post {
-    success { echo 'Deployment successful 🚀' }
-    failure { echo 'Pipeline failed ❌' }
   }
 }
+
