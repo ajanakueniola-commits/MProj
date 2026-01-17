@@ -399,7 +399,7 @@ stage('Deploy FastAPI Backend') {
                 for ip in ${env.BACKEND_IP}; do
                     echo "Deploying FastAPI on \$ip"
 
-                    ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << EOF
+                    ssh -T -o StrictHostKeyChecking=no ec2-user@\${ip} << EOF
                     set -e
 
                     # Install Python3, pip, git
