@@ -271,3 +271,5 @@ packer/*.log
 *override.tfvars
 *override.tfvars.json
 .json.lock
+manifest.json
+manifest.json
