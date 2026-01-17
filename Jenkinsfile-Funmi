@@ -101,8 +101,9 @@ pipeline {
 
             ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
               rm -rf /tmp/fruits
-              git clone https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits
-              cd fruits-veg_market/frontend
+               git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits
+              cd /tmp/fruits/frontend
+              // cd fruits-veg_market/frontend
              
               sed -i 's|http://localhost|https://${env.BACKEND_IP}|g' index.html
               sudo cp index.html /usr/share/nginx/html/
