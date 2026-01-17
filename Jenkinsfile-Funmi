@@ -393,7 +393,7 @@ EOF
 // Deploy Fastapi with systemd
 stage('Deploy FastAPI Backend') {
     if (params.ACTION == 'apply') {
-        script {
+        node { // <-- Add this
             sshagent(credentials: ['AWS_SSH_KEY']) {
                 sh """
                 for ip in \$(echo '${env.BACKEND_IP}' | jq -r '.[]'); do
@@ -445,6 +445,6 @@ EOF
                 done
                 """
             }
-        }
+        } // end node
     }
 }
