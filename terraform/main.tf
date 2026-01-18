@@ -28,10 +28,6 @@ terraform {
     }
   }
 }
-provider "aws" {
-  region = var.region
-}
-}
 
 ####################
 # AMI Lookup
