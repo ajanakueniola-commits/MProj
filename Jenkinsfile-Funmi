@@ -1,3 +1,166 @@
+// pipeline {
+//   agent any
+
+//   environment {
+//     AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+//     AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
+//     AWS_REGION           = 'us-east-2'
+//     AWS_SSH_KEY = credentials('AWS_SSH_KEY')
+//   }
+
+//   parameters {
+//     choice(name: 'ACTION', choices: ['plan', 'apply', 'destroy'], description: 'Terraform action')
+//     booleanParam(name: 'BUILD_AMIS', defaultValue: false, description: 'Build base AMI with Packer')
+//   }
+
+//   stages {
+
+//     stage('Checkout') {
+//       steps {
+//         checkout scm
+//       }
+//     }
+
+//     stage('Build Base AMI') {
+//       when { expression { params.BUILD_AMIS } }
+//       steps {
+//         dir('packer') {
+//           sh '''
+//             packer init .
+//             packer build web-app-base.pkr.hcl
+//           '''
+//         }
+//       }
+//     }
+
+//   stage('Terraform') {
+//   environment {
+//     TF_VAR_db_username = credentials('db_username')
+//     TF_VAR_db_password = credentials('db_password')
+//     TF_VAR_db_name     = credentials('db_name')
+//     TF_VAR_key_name    = credentials('key_name')
+
+//   }
+
+//   steps {
+//     dir('terraform') {
+//       sh 'terraform init -reconfigure'
+//       sh 'terraform validate'
+//       sh 'env | grep TF_VAR'
+//       sh 'env | grep TF_VAR'
+
+
+//       script {
+//         if (params.ACTION == 'plan') {
+//           sh 'terraform plan'
+//         }
+
+//         if (params.ACTION == 'apply') {
+//           sh 'terraform apply -auto-approve'
+//         }
+
+//         if (params.ACTION == 'destroy') {
+//           sh 'terraform destroy -auto-approve'
+//         }
+//       }
+//     }
+//   }
+// }
+
+
+//     stage('Get IPs') {
+//       when { expression { params.ACTION == 'apply' } }
+//       steps {
+//         script {
+//           dir('terraform') {
+//             env.BACKEND_IP = sh(
+//               script: "terraform output -json backend_private_ips | jq -r '.[0]'",
+//               // script: "terraform output -json backend_public_ips | jq -r '.[0]'",
+//               returnStdout: true
+//             ).trim()
+
+//             env.WEB_IPS = sh(
+//               script: "terraform output -json web_server_ips",
+//               returnStdout: true
+//             ).trim()
+//           }
+
+// //           env.POSTGRES_ENDPOINT = sh(
+// //         script: 'terraform output -raw postgres_endpoint',
+// //     returnStdout: true
+// // ).trim()
+
+//      // echo "Postgres Endpoint: ${env.POSTGRES_ENDPOINT}"
+//      echo "Backend IP: ${env.BACKEND_IP}"
+//      echo "Web IPs: ${env.WEB_IPS}"
+//       }
+//     } 
+//     }
+
+//     stage('Deploy Nginx + Reverse Proxy') {
+//       when { expression { params.ACTION == 'apply' } }
+//       steps {
+//         script {
+//           sshagent(credentials: ['AWS_SSH_KEY']) {
+//           sh """
+//           for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
+//             echo "Configuring Nginx on \$ip"
+
+//             ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
+//               rm -rf /tmp/fruits
+//                git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits
+//               cd /tmp/fruits/frontend
+//               // cd fruits-veg_market/frontend
+             
+//               sed -i 's|http://localhost|https://${env.BACKEND_IP}|g' index.html
+//               sudo cp index.html /usr/share/nginx/html/
+
+//               sudo tee /etc/nginx/nginx.conf> /dev/null << EOL
+// server {
+//     listen 80;
+//     server_name enny4life.duckdns.org;
+
+//     root /usr/share/nginx/html;
+//     index index.html;
+
+//     location / {
+//         try_files \\\$uri \\\$uri/ /index.html;
+//     }
+
+//     location /api/ {
+//         proxy_pass http://${env.BACKEND_IP}:8000/;
+//         proxy_set_header Host \\\$host;
+//         proxy_set_header X-Real-IP \\\$remote_addr;
+//     }
+// }
+// EOL
+
+//               sudo nginx -t
+//               sudo systemctl restart nginx
+// EOF
+//           done
+//           """
+//         }
+//       }
+//     }
+//     }
+//     stage('Terraform Destroy') {
+//   when { expression { params.ACTION == 'destroy' } }
+//   steps {
+//     dir('terraform') {
+//       input message: 'Are you sure you want to destroy?', ok: 'Destroy'
+//       sh 'terraform destroy -auto-approve'
+//     }
+//   }
+// }
+
+//   post {
+//     success { echo 'Deployment successful 🚀' }
+//     failure { echo 'Pipeline failed ❌' }
+//   }
+// }
+// }
+
 pipeline {
   agent any
 
@@ -68,7 +231,6 @@ pipeline {
           dir('terraform') {
             env.BACKEND_IP = sh(
               script: "terraform output -json backend_private_ips | jq -r '.[0]'",
-              // script: "terraform output -json backend_public_ips | jq -r '.[0]'",
               returnStdout: true
             ).trim()
 
@@ -78,58 +240,145 @@ pipeline {
             ).trim()
           }
 
-//           env.POSTGRES_ENDPOINT = sh(
-//         script: 'terraform output -raw postgres_endpoint',
-//     returnStdout: true
-// ).trim()
-
-     // echo "Postgres Endpoint: ${env.POSTGRES_ENDPOINT}"
-     echo "Backend IP: ${env.BACKEND_IP}"
-     echo "Web IPs: ${env.WEB_IPS}"
+          echo "Backend IP: ${env.BACKEND_IP}"
+          echo "Web IPs: ${env.WEB_IPS}"
+        }
       }
-    } 
     }
 
-    stage('Deploy Nginx + Reverse Proxy') {
-      when { expression { params.ACTION == 'apply' } }
-      steps {
-        script {
-          sshagent(credentials: ['AWS_SSH_KEY']) {
-          sh """
-          for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
-            echo "Configuring Nginx on \$ip"
+//     stage('Deploy Nginx + Reverse Proxy') {
+//       when { expression { params.ACTION == 'apply' } }
+//       steps {
+//         script {
+//           sshagent(credentials: ['AWS_SSH_KEY']) {
+//             sh """
+//             for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
+//               echo "Configuring Nginx on \$ip"
 
-            ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
-              rm -rf /tmp/fruits
-               git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits
-              cd /tmp/fruits/frontend
-              // cd fruits-veg_market/frontend
-             
-              sed -i 's|http://localhost|https://${env.BACKEND_IP}|g' index.html
-              sudo cp index.html /usr/share/nginx/html/
+//               ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
+//                 rm -rf /tmp/fruits-veg_market
 
-              sudo tee /etc/nginx/nginx.conf> /dev/null << EOL
+//                 git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits-veg_market
+//                 cd /tmp/fruits-veg_market/frontend
+
+//                 sudo cat index.html
+
+//                 sed -i 's|http://localhost|https://${env.BACKEND_IP}|g' index.html
+                
+//                 sudo cp index.html /usr/share/nginx/html/
+//                 sudo cat /usr/share/nginx/html/index.html
+
+//                 sudo tee /etc/nginx/nginx.conf > /dev/null << EOL
+// server {
+//     listen 80;
+//     server_name enny4life.duckdns.org;
+
+//     root /usr/share/nginx/html;
+//     index index.html;
+
+//     location / {
+//         try_files \\\$uri \\\$uri/ /index.html;
+//     }
+
+//     location /api/ {
+//         proxy_pass http://${env.BACKEND_IP}:8000/;
+//         proxy_set_header Host \\\$host;
+//         proxy_set_header X-Real-IP \\\$remote_addr;
+//     }
+// }
+// EOL
+
+//                 sudo nginx -t
+//                 sudo systemctl restart nginx
+// EOF
+//             done
+//             """
+//           }
+//         }
+//       }
+//     }
+
+//     stage('Terraform Destroy') {
+//       when { expression { params.ACTION == 'destroy' } }
+//       steps {
+//         dir('terraform') {
+//           input message: 'Are you sure you want to destroy?', ok: 'Destroy'
+//           sh 'terraform destroy -auto-approve'
+//         }
+//       }
+//     }
+//   }
+
+//   post {
+//     success { echo 'Deployment successful 🚀' }
+//     failure { echo 'Pipeline failed ❌' }
+//   }
+// }
+stage('Deploy Nginx + Reverse Proxy') {
+  when { expression { params.ACTION == 'apply' } }
+  steps {
+    script {
+      sshagent(credentials: ['AWS_SSH_KEY']) {
+        sh """
+        for ip in \$(echo '${env.WEB_IPS}' | jq -r '.[]'); do
+          echo "Configuring Nginx on \$ip"
+
+          ssh -o StrictHostKeyChecking=no ec2-user@\${ip} << 'EOF'
+            set -e
+
+            sudo yum install -y nginx git
+            sudo systemctl enable nginx
+
+            rm -rf /tmp/fruits-veg_market
+            git clone -b mini-project https://github.com/ajanakueniola-commits/fruits-veg_market.git /tmp/fruits-veg_market
+            cd /tmp/fruits-veg_market/frontend
+
+            sed -i 's|http://localhost|http://${BACKEND_IP}|g' index.html
+            sudo cp index.html /usr/share/nginx/html/index.html
+
+            # ---- Base nginx.conf ----
+            sudo tee /etc/nginx/nginx.conf > /dev/null << 'NGINXCONF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+    sendfile        on;
+    keepalive_timeout 65;
+    include /etc/nginx/conf.d/*.conf;
+}
+NGINXCONF
+
+            # ---- App server config ----
+            sudo tee /etc/nginx/conf.d/app.conf > /dev/null << 'APPCONF'
 server {
-    listen 80;
+    listen 80 default_server;
     server_name enny4life.duckdns.org;
 
     root /usr/share/nginx/html;
     index index.html;
 
     location / {
-        try_files \\\$uri \\\$uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
     location /api/ {
-        proxy_pass http://${env.BACKEND_IP}:8000/;
-        proxy_set_header Host \\\$host;
-        proxy_set_header X-Real-IP \\\$remote_addr;
+        proxy_pass http://${BACKEND_IP}:8000/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 }
-EOL
+APPCONF
 
-              sudo nginx -t
-              sudo systemctl restart nginx
+            sudo nginx -t
+            sudo systemctl restart nginx
 EOF
           done
           """

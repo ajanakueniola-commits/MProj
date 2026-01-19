@@ -48,15 +48,10 @@ output "web_server_ips" {
   value       = aws_instance.nginx[*].public_ip
 }
 
-output "backend_private_ips" {
-  value       = aws_instance.backend[*].private_ip
-  description = "Private IPs of backend servers"
-}
-
-output "web_server_ips" {
-  value       = aws_instance.web[*].public_ip
-  description = "Public IPs of web servers"
-}
+# output "backend_private_ips" {
+#   value       = aws_instance.backend[*].private_ip
+#   description = "Private IPs of backend servers"
+# }
 
 ##########################
 # PostgreSQL
